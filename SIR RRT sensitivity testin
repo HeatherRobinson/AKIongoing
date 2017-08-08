@@ -1,0 +1,177 @@
+setwd("c:/Users/mqbpjhr4/Documents")
+library(lubridate)
+library(plyr)
+
+#Join tables previously split for formatting
+Patients<-read.table("Patients.csv",header=TRUE, sep=",")
+testsA<-read.table("1tests.csv",header=TRUE,sep= ",")
+testsB<-read.table("2tests.csv",header=TRUE,sep= ",",quote="")
+testsC<-read.table("3tests.csv",header=TRUE,sep= ",") 
+testsD<-read.table("4tests.csv",header=TRUE,sep= ",")
+testsE<-read.table("5tests.csv",header=TRUE,sep= ",")
+testsF<-read.table("6tests.csv",header=TRUE,sep= ",")
+testsG<-read.table("7tests.csv",header=TRUE,sep= ",")
+testsH<-read.table("8tests.csv",header=TRUE,sep= ",")
+tests<- rbind(testsA,testsB,testsC,testsD,testsE,testsF,testsG,testsH)
+SIR<- merge(Patients,tests,all=TRUE, by='PatID')
+
+#Check same number
+levels(as.factor(tests$PatID))
+levels(as.factor(SIR$PatID))
+#78630
+
+#create new vectors for age, hospital/GP 
+SIR$Age<-(as.numeric(year(strptime(SIR$EntryDate, format="%d/%m/%Y"))))-SIR$Year_Of_Birth
+attach(SIR)
+Over<-subset(SIR,SIR$Age>=15 & as.numeric(year(strptime(SIR$EntryDate, format="%d/%m/%Y")))>=2009,)
+Over$location<- ifelse(Over$Source=="salfordt", c("Hospital"),("GP"))
+
+#Group redundant read codes/rubrics- check these manually for each new extract
+levels(Over$ReadCode)[1:24]<-"dialysis"
+levels(Over$ReadCode)[3:7] <- "creatinine"
+levels(Over$ReadCode)[4:7] <- "eGFR"
+levels(Over$ReadCode)[5:7] <- "transplant"
+levels(Over$ReadCode)[6:13] <- "dialysis"
+levels(Over$ReadCode)[6:7] <- "creatinine"
+levels(Over$ReadCode)[6:8] <- "transplant"
+levels(Over$ReadCode)[7] <- "transplant"
+levels(Over$ReadCode)[17:18] <- "dialysis"
+levels(Over$ReadCode)[7:8] <- "dialysis"
+levels(Over$ReadCode)[6] <- "creatinine"
+levels(Over$ReadCode)[8] <- "creatinine"
+levels(Over$ReadCode)[7] <- "transplant"
+levels(Over$ReadCode)[8] <- "dialysis"
+levels(Over$ReadCode)[6:10] <- "transplant"
+#Check these manually every time you re-extract/resubset as they will change
+
+#Assign more options
+options(expressions=20000)
+
+#Check which units have been used to measure Creatinine, 
+#then assign a single designation 
+levels(Over$Units)
+levels(Over$Units)[9:18]<- "mLmin173m2"
+levels(Over$Units)[38]<- "mLmin173m2"
+levels(Over$Units)[35]<- "mLmin173m2"
+levels(Over$Units)[30]<- "mLmin173m2"
+levels(Over$Units)[26:28]<- "mLmin173m2"
+levels(Over$Units)[20]<- "mLmin173m2"
+levels(Over$Units)[7]<- "mLmin173m2"
+levels(Over$Units)[1]<- "mLmin173m2"
+levels(Over$Units)[5]<- "mLmin173m2"
+levels(Over$Units)[10:13]<- "mLmin173m2"
+
+table(Over$Units,Over$ReadCode)
+levels(Over$Units)[5]<-"umoloL"
+levels(Over$Units)[22]<-"umoloL"
+#Check these every time you re-extract/resubset as they will change
+
+#convert from mg/dL to umol/L if needed
+table(Over$ReadCode,Over$Units)
+Over$stcreat<- ifelse(Over$Units=="umoloL"| Over$Units=="None",paste(Over$Value),as.numeric(Over$Value)/1000) 
+table(Over$ReadCode,Over$Units)
+Over$stcreat<- ifelse(Over$Units=="pmoloL", as.numeric(Over$Value)/1000000, paste(Over$stcreat)) 
+Over$stcreat<- ifelse(Over$ReadCode=="creatinine",paste(Over$stcreat), paste("NA")) 
+table(Over$stcreat)
+table(Over$ReadCode)
+
+#create eGFR column
+Over$Value<-as.numeric(Over$Value)
+Over$mdrd<- ifelse(Over$Units=="mLo24ho1.73m*2",paste(as.numeric(Over$Value)/1440),paste("NA"))
+Over$mdrd<- ifelse(Over$Units=="mLmin173m2",paste(Over$Value),paste(Over$mdrd)) 
+Over$mdrd<- ifelse(Over$ReadCode=="eGFR",paste(Over$mdrd), paste("NA"))
+Over$mdrd<-as.numeric(Over$mdrd)
+
+#Simplify ethnicity for eGFR
+levels(Over$Ethnicity)[97:142]<-"A"
+levels(Over$Ethnicity)[3:10]<-"A"
+levels(Over$Ethnicity)[22:27]<-"A"
+levels(Over$Ethnicity)[24:67]<-"A"
+levels(Over$Ethnicity)[26:36]<-"A"
+levels(Over$Ethnicity)[1:2]<-"B"
+levels(Over$Ethnicity)[3:27]<-"B"
+table(Over$Ethnicity)
+
+Over$EntryDate<-as.Date(Over$EntryDate, format="%d/%m/%Y")
+MONTH<- format(Over$EntryDate, "%m")
+YEAR<- format(Over$EntryDate, "%Y")
+Over$EntryPeriod<-paste(MONTH,YEAR)
+gsub(" ", "", Over$EntryPeriod, fixed = TRUE)
+Over$EntryPeriod<-as.numeric(as.factor(Over$EntryPeriod))
+
+
+indexc<-Over[Over$ReadCode=="creatinine",]
+length(indexc$PatID)
+#285569 creatinine values for index year (2012)
+
+indexd<-subset(Over,as.numeric(year(strptime(Over$EntryDate, format="%Y-%m-%d")))==2012,)
+table(indexd$ReadCode)
+
+#REMOVE DUPLICATES WITHIN THE SAME CALENDAR MONTH
+#Delete all duplicates within the same calendar month
+Over$stcreat<-as.numeric(Over$stcreat)
+Over$PatID<-as.numeric(Over$PatID)
+Over2<-Over[order(Over$PatID,rev(Over$EntryDate)),]
+names(Over2)
+d<-duplicated(Over2[,c(1,15,22)])
+head(Over2[d,],n=10)
+head(Over2,n=20)
+Over2<-Over2[!d,]
+head(Over2,n=8)
+
+levels(as.factor(Over2$Value))
+Over2>-Over2[!Over2$Value=="0",]
+Over2<-Over2[,c(1,3:4,12,18:21)]
+
+#Reshape table so mdrd and stcreat are on the same line to avoid STATA issues
+Overb<-aggregate(x=Over2[c("stcreat","mdrd")], by=list(PatID=Over2$PatID,EntryDate=Over2$EntryDate,Age=Over2$Age,Sex=Over2$Sex,Ethnicity=Over2$Ethnicity,location=Over2$location), min, na.rm = TRUE)
+head(Overb)
+levels(as.factor(Overb$stcreat))
+Overb<-Overb[!Overb$stcreat=="Inf",]
+#How many patients had creatinine tests in the index year 
+#following data cleansing
+index<-subset(Overb,as.numeric(year(strptime(Overb$EntryDate, format="%Y-%m-%d")))==2012,)
+levels(as.factor(index$PatID))
+length(index$stcreat)
+#How many females have a creatinine result for the index year
+indexf<-subset(index,index$Sex=="F")
+levels(as.factor(indexf$PatID))
+#How many creatinine test records for the index year by age
+index70<-subset(index,index$Age>=70)
+levels(as.factor(index70$PatID))
+index39<-subset(index,index$Age<=39)
+levels(as.factor(index39$PatID))
+
+#Cut the table down to patients with a creatinine test in the index year
+Over4<-Overb[Overb$PatID %in% index$PatID,]
+length(Over4$stcreat)
+length(index$stcreat)
+#There should be more records in Over4 than in index
+
+
+ 
+#Assign associated eGFR if missing
+Over4$stcreat<-as.numeric(Over4$stcreat)
+Over4$mdrd<-ifelse(Over4$mdrd=="0"|Over4$mdrd=="Inf",paste("NA"),paste(Over4$mdrd))
+Over4$mdrd<-ifelse(Over4$mdrd=="NA"&Over4$Sex=="M"&Over4$Ethnicity=="B",175*((Over4$stcreat/88.4)^-1.154)*((Over4$Age)^-0.203)*1.212,paste(Over4$mdrd))
+Over4$mdrd<-ifelse(Over4$mdrd=="NA"&Over4$Sex=="F"&Over4$Ethnicity=="A",(175*((Over4$stcreat/88.4)^-1.154)*((Over4$Age)^-0.203)*0.742),paste(Over4$mdrd))
+Over4$mdrd<-ifelse(Over4$mdrd=="NA"&Over4$Sex=="F"&Over4$Ethnicity=="B",(175*((Over4$stcreat/88.4)^-1.154)*((Over4$Age)^-0.203)*0.742*1.212),paste(Over4$mdrd))
+Over4$mdrd<-ifelse(Over4$mdrd=="NA",(175*(Over4$stcreat/88.4)^-1.154)*((Over4$Age)^-0.203),paste(Over4$mdrd))
+
+#Drop eGFR values over 250 uml/L
+Over4<-Over4[Over4$mdrd<=250,]
+length(Over4$PatID)
+# Over4 is a subset from patients before transplant or dialysis
+#for patients over 15 
+#with records within the index year, records from 01/01/2009 to 07/12/2014 #excluding null creatinine values 
+#excluding mdrd>250.
+
+#Write an input file for STATA with headings needed for Aberdeen algorithm
+#by Simon Sawhney 
+attach(Over4)
+SIRinputrrt<-file(paste("SIR_Rinputrrt.csv"), open="w")
+cat("studyid","dos","stcreat","mdrd","location_code","age","sex","\n", sep=",",file="SIR_Rinputrrt.csv",append=TRUE)
+for (n in 1:1067489){ #Change loop number to number of records in dataset
+cat((paste(Over4$PatID[n])),(paste(Over4$EntryDate[n])), (paste(Over4$stcreat[n])),(paste(Over4$mdrd[n])), (paste(Over4$location[n])),(paste(Over4$Age[n])),(paste(Over4$Sex[n])), "\n", file="SIR_Rinputrrt.csv", sep=",", fill=FALSE, labels=NULL, append=TRUE)}
+
+
