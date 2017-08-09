@@ -121,11 +121,9 @@ levels(as.factor(Overb$stcreat))
 Overb<-Overb[!Overb$stcreat=="Inf",]
 #How many patients had creatinine tests in the index year 
 #following data cleansing
-index<-subset(Over4,as.numeric(year(strptime(Over4$EntryDate, format="%Y-%m-%d")))==2012,)
 levels(as.factor(index$PatID))
-length(index$stcreat)
-#How many females have a creatinine result for the index year
-Over4<-Overb[!Overb$stcreat=="Inf",]
+
+Over4<-Overb
 #How many patients had creatinine tests in the index year 
 #following data cleansing
 index<-subset(Over4,as.numeric(year(strptime(Over4$EntryDate, format="%Y-%m-%d")))==2012,)
@@ -136,12 +134,12 @@ length(index$stcreat)
  
 #Assign associated eGFR if missing
 Over4$stcreat<-as.numeric(Over4$stcreat)
-Over4$mdrd<-ifelse(Over4$mdrd=="0"|Over4$mdrd=="Inf",paste("NA"),paste(Over4$mdrd))
+Over4$mdrd<-ifelse(Over4$mdrd=="0"|Over4$mdrd=="Inf",NA,paste(Over4$mdrd))
 Over4$mdrd<-ifelse(Over4$mdrd=="NA"&Over4$Sex=="M"&Overb$Ethnicity=="B",175*((Over4$stcreat/88.4)^-1.154)*((Over4$Age)^-0.203)*1.212,paste(Over4$mdrd))
 Over4$mdrd<-ifelse(Over4$mdrd=="NA"&Overb$Sex=="F"&Overb$Ethnicity=="A",(175*((Over4$stcreat/88.4)^-1.154)*((Over4$Age)^-0.203)*0.742),paste(Over4$mdrd))
 Over4$mdrd<-ifelse(Over4$mdrd=="NA"&Over4$Sex=="F"&Overb$Ethnicity=="B",(175*((Over4$stcreat/88.4)^-1.154)*((Over4$Age)^-0.203)*0.742*1.212),paste(Over4$mdrd))
 Over4$mdrd<-ifelse(Over4$mdrd=="NA",(175*(Over4$stcreat/88.4)^-1.154)*((Over4$Age)^-0.203),paste(Over4$mdrd))
-
+Over4$mdrd<-as.numeric(Over4$mdrd)
 #Drop eGFR values over 250 uml/L
 Over4<-Over4[Over4$mdrd<=250,]
 length(Over4$PatID)
@@ -154,7 +152,7 @@ length(Over4$PatID)
 attach(Over4)
 SIRinputrrt<-file(paste("SIR_Rinputrrt.csv"), open="w")
 cat("studyid","dos","stcreat","mdrd","location_code","age","sex","\n", sep=",",file="SIR_Rinputrrt.csv",append=TRUE)
-for (n in 1:152143){ #Change loop number to number of records in dataset
+for (n in 1:819200){ #Change loop number to number of records in dataset
 cat((paste(Over4$PatID[n])),(paste(Over4$EntryDate[n])), (paste(Over4$stcreat[n])),(paste(Over4$mdrd[n])), (paste(Over4$location[n])),(paste(Over4$Age[n])),(paste(Over4$Sex[n])), "\n", file="SIR_Rinputrrt.csv", sep=",", fill=FALSE, labels=NULL, append=TRUE)}
 
 
