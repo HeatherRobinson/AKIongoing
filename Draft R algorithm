@@ -102,7 +102,7 @@ daymarker<-NA
 a <-a[order(studyid, dos),] 
 attach(a)
 
-pb<-tkProgressBar(title="Assigning index creatinine values",min=0,max=max(protagonist),width=300) #indicates progress through the loop
+pb<-tkProgressBar(title="Loading index creatinine values",min=0,max=max(protagonist),width=300) #indicates progress through the loop
 for (i in 1:max(protagonist)) {
 for (i in 1:50) {
 mightydate<-ifelse(protagonist==i,dos,mightydate)
@@ -113,8 +113,9 @@ monthmarker<-ifelse((protagonistdos-dos)<=90 &(protagonistdos-dos)>=8,1,monthmar
 daymarker<-ifelse((protagonistdos-dos)<=2 & !protagonistdos==dos,1,daymarker)
 mightyvalue<-ifelse(protagonist==i,stcreat,NA)
 protagonistvalue<-ave(mightyvalue[!is.na(mightyvalue)],studyid,FUN=max)
+}
 setTkProgressBar(pb,i,label=paste(round(i/(max(protagonist))*100, 0),"% done"))
-}}
+}
 #finds the index (investigated) creatinine of key interest, applies this value across all patient samples
 
 #END OF LOOP
