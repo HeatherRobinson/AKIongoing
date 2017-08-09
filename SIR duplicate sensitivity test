@@ -230,6 +230,7 @@ Over4$mdrd<-ifelse(Over4$mdrd=="NA"&Over4$Sex=="F"&Over4$Ethnicity=="A",(175*((O
 Over4$mdrd<-ifelse(Over4$mdrd=="NA"&Over4$Sex=="F"&Over4$Ethnicity=="B",(175*((Over4$stcreat/88.4)^-1.154)*((Over4$Age)^-0.203)*0.742*1.212),paste(Over4$mdrd))
 Over4$mdrd<-ifelse(Over4$mdrd=="NA",(175*(Over4$stcreat/88.4)^-1.154)*((Over4$Age)^-0.203),paste(Over4$mdrd))
 
+Over4$mdrd<-as.numeric(Over4$mdrd)
 #Drop eGFR values over 250 uml/L
 Over4<-Over4[Over4$mdrd<=250,]
 length(Over4$PatID)
@@ -243,6 +244,6 @@ length(Over4$PatID)
 attach(Over4)
 SIRinput<-file(paste("SIR_Rinputdup.csv"), open="w")
 cat("studyid","dos","stcreat","mdrd","location_code","age","sex","\n", sep=",",file="SIR_Rinputdup.csv",append=TRUE)
-for (n in 1:1067489){ #Change loop number to number of records in dataset
+for (n in 1:1214955){ #Change loop number to number of records in dataset
 cat((paste(Over4$PatID[n])),(paste(Over4$EntryDate[n])), (paste(Over4$stcreat[n])),(paste(Over4$mdrd[n])), (paste(Over4$location[n])),(paste(Over4$Age[n])),(paste(Over4$Sex[n])), "\n", file="SIR_Rinputdup.csv", sep=",", fill=FALSE, labels=NULL, append=TRUE)}
 
