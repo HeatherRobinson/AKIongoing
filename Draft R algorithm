@@ -1,0 +1,402 @@
+#This is an edited version of AKI discrete episode code as previously described in AJKD.
+#The original version included multiple different definitions using different look-backs, look-forwards, approaches to #ranking baseline values
+#This code cannot be applied directly to the current NHSE AKI warning algorithm, because the use here of a 8-90-365 hierarchical #criterion results in different categorisations.
+#Lab reported MDRD eGFR is used to define baseline, modules are also included to derive this from MDRD or CKD-EPI
+#This code requires pre-installation of the following R packages:
+#taRifx
+#dplyr
+#tcltk
+#lubridate
+
+############################################################################################
+#PART 0 - INITIAL VARIABLE CHECKLIST
+
+#studyid = unique id number for patient
+#dos = date of sample
+#stcreat = idms standardised creatinine
+#mdrd = mdrd eGFR
+#sex = male=1 female=0
+#age = age in years at time of sample
+#location_code = inpatient or outpatient sample
+#Ensure input table columns are ordered as above
+
+#PLEASE ENSURE THAT THE FILE CONTAINS ONLY STANDARDISED SERUM/BLOOD CREATININE RESULTS (NO OTHER BIOCHEMISTRY) 
+#ALSO CHECK THAT ALL SAMPLES AFTER PATIENTS HAVE STARTED RRT/RECEIVED A TRANSPLANT HAVE BEEN REMOVED
+
+############################################################################################
+
+setwd("c:/Users/mqbpjhr4/Documents")
+
+# PART 1 - CHECK AND ORGANISE VARIABLES
+#This section ensures dates are recognised by R
+#destrings numeric variables
+#Based on studying the highest creatinine each day considering low reliability of time stamps
+
+library (taRifx)
+library (dplyr)
+library(tcltk)
+library(lubridate)
+
+a<-read.table("testrversion.csv",sep=",",header=TRUE)
+attach(a)
+destring(c(studyid,stcreat,age,sex,dos,mdrd))
+
+a <- a[order(-stcreat),] #The highest stcreat per day will be retained
+table(duplicated(a[,1:2]))
+a<-a[ !duplicated(a[,1:2]), ] #drop other stcreat values
+length(a$studyid) #Number of records following duplicate removal
+a<-a[!is.na(a$stcreat),]
+a<-a[!a$mdrd>250,]
+length(a$studyid) #Remaining entries after removing missing and impossible values
+attach(a)
+
+###############################################################################################CHECKED
+
+#GENERATE A "PROTAGONIST" VARIABLE THAT IS THE CUMULATIVE COUNT OF EACH BLOOD SAMPLE AFTER JANUARY 1st 2003
+#WHERE 2003 IS THE INCIDENT YEAR; AND AKI EPISODES FROM 2000 TO 2003 ARE MARKED AS PRIOR EPISODES
+
+#SELECT AS APPROPRIATE
+index<-which(dos>=40907 & dos<=41272) #works for excel/STATA date formats
+#index<-which(dmy(dos)>=ymd("2012-01-01")&dmy(dos)<ymd("2013-01-01")) #Option for traditional format dates
+
+a$yr03<-0
+a$yr03[index]<-1 #MARK INDEX YEAR
+
+#SELECT AS APPROPRIATE
+a$post2000<-ifelse(dos>=39812,1,0) #sample after 1st jan 
+#a$post2000<-ifelse(dmy(dos)>=ymd("2000-01-01"),1,0) #sample after 1st jan 
+
+a <-a[a$post2000==1,] 
+attach(a)
+
+#############################################################################################
+require(dplyr)
+sorted <- a %>% 
+          arrange(studyid,dos) %>%
+          group_by(studyid) %>%
+          mutate(protagonist=row_number())
+a<-data.frame(sorted)
+attach(a)
+summary(protagonist)
+############################################################################################
+
+# PART 2 - LOOP FOR AKI FLAGS 
+#LOOP FORMATION FOR COMPARING EACH TEST WITH PREVIOUS TESTS
+#CREATE A MARKER VARIABLE FOR EACH TIME AKI EALERT CRITERIA SATISFIED
+
+newAKI<-0
+AKImonth<-0
+AKIyear<-0
+AKIweek<-0
+AKIday<-0
+max(protagonist) #number of loop iterations needed.
+
+#LOOP for x values, where x = the highest number of tests a patient had in the index year (max(protagonist)) 
+mightydate<-NA
+protagonistdos<-NA
+yearmarker<-NA
+monthmarker<-NA
+weekmarker<-NA
+daymarker<-NA
+a <-a[order(studyid, dos),] 
+attach(a)
+
+pb<-tkProgressBar(title="progress bar",min=0,max=max(protagonist),width=300) #indicates progress through the loop
+for (i in 1:max(protagonist)) {
+
+pb<-tkProgressBar(title="progress bar",min=0,max=max(protagonist),width=300) #indicates progress through the loop
+for (i in 1:50) {
+setTkProgressBar(pb,i,label=paste(round(i/(max(protagonist))*100, 0),"% done"))
+mightydate<-ifelse(protagonist==i,dos,mightydate)
+protagonistdos<-as.numeric(ave(mightydate,studyid,FUN=max))
+yearmarker<-ifelse((protagonistdos-dos)<=365 & (protagonistdos-dos)>90,1,yearmarker)
+weekmarker<-ifelse((protagonistdos-dos)<=7 & !protagonistdos==dos,1,weekmarker)
+monthmarker<-ifelse((protagonistdos-dos)<=90 &(protagonistdos-dos)>=8,1,monthmarker)
+daymarker<-ifelse((protagonistdos-dos)<=2 & !protagonistdos==dos,1,daymarker)
+mightyvalue<-ifelse(protagonist==i,stcreat,NA)
+protagonistvalue<-ave(mightyvalue[!is.na(mightyvalue)],studyid,FUN=max)
+
+#finds the index (investigated) creatinine of key interest, applies this value across all patient samples
+}
+
+#END OF LOOP
+close(pb)
+
+#The above variables mark the dates of blood tests that fit the ealert AKI windows or those required for sensitivity analysis
+
+yearvalue<-ifelse(yearmarker==1,stcreat,NA)
+weekvalue<-ifelse(weekmarker==1,stcreat,NA)
+monthvalue<-ifelse(monthmarker==1,stcreat,NA)
+dayvalue<-ifelse(daymarker==1,stcreat,NA)
+
+#finds the appropriate creatinine within these windows, excludes missing creatinines which would all be exceptionally high
+
+memory.limit(4000)
+yearmedian<-ave(yearvalue[!is.na(yearvalue)],studyid, FUN=median)
+weekmin<-ave(weekvalue[!is.na(weekvalue)],studyid,FUN=min)
+monthmedian<-ave(monthvalue[!is.na(monthvalue)],studyid,FUN=median)
+daymin<-ave(dayvalue[!is.na(dayvalue)],studyid,FUN=min)
+#applies the optimal reference creatinine across all patient samples
+
+############################################################################################
+for (i in 50) {
+
+AKIyear<-ifelse((protagonistvalue/yearmedian)>=1.5 & protagonist==i&!is.na(yearmedian) & is.na(monthmedian),1,0)
+#year AKI can only be tested if there is not a monthmedian already available for the sample, thus monthmedian sample needs to be missing before looking back further
+
+AKIweek<-ifelse((protagonistvalue/weekmin)>=1.5 & protagonist==i & !is.na(weekmin),1,0)
+AKIday<-ifelse((protagonistvalue-daymin)>26 & protagonist==i & !is.na(daymin),1,0)
+AKImonth<-ifelse((protagonistvalue/monthmedian)>=1.5 & protagonist==i & !is.na(monthmedian),1,0) 
+### flags samples meeting AKI criteria, (non missing option vital)
+}
+
+#END OF LOOP
+close(pb)
+
+#DEVELOP COMBINED GROUPS AND MARK FIRST AKI
+newAKI<-ifelse(AKIyear==1|AKIweek==1|AKIday==1|AKImonth==1,1,0) #AKI qualifying blood test
+
+############################################################################################CHECKED
+
+# PART 3 - PROCESSING OF AKI FLAGS
+
+#DIVIDE AKI INTO 90 DAY SESSIONS (UP TO TEN)
+AKIcounter<-ifelse(newAKI==1,1,NA) #AKI episode counter starting from 2000
+a <- a[order(studyid,AKIcounter,dos),]
+attach(a)
+for(x in 1:10) {
+counterdate<-ifelse(AKIcounter==x,ave(as.numeric(dos),studyid,FUN=min),NA)
+AKIcounter<-ifelse((as.numeric(dos)-90)>(as.numeric(counterdate)) & AKIcounter==x,AKIcounter+1,AKIcounter)
+}
+
+#Assign an akicounter value of 1 to all AKI blood tests
+#Add +1 to aki counter if the date of the sample was >90 days after the first sample with an akicounter value of 1
+#Add +1 to aki counter if the date of the sample was >90 days after the first sample with an akicounter value of 2
+#Repeat for up to 10 episodes (or 10 90 day AKI periods, which equates to 2.5 years)
+
+#ADD A CUMULATIVE AKI SPELL COUNT TO EACH BLOOD TEST WITHIN A 90 DAY EPISODE
+#makes a count variable AKIspellcounter -of the nth blood test per episode
+
+a<-a[with(a, order(studyid,AKIcounter,dos)),]
+attach(a)
+a$AKIspellcounter<-ave(AKIcounter,studyid,FUN = seq_along)#nth AKI blood test within each AKI episode
+
+
+#MARK FIRST AKI IN 2003 AND ITS CONSTITUENT PARTS (YOU NEED THE SPELLCOUNTER VARIABLE AS SOME EPISODES OVERLAP FROM 2002)
+#THE IDEA HERE IS TO FLAG UP THE FIRST 2003 AKI EPISODE AND NOT ANY EARLIER EPISODES THAT HAPPENED 2000-2002 (THEY ARE ONLY RELEVANT IN THAT THEY ARE PRIOR EPISODES FOR COUNTING)
+
+a <- a[with(a,order(studyid,newAKI, AKIspellcounter,yr03, dos)),]
+attach(a)
+
+############################################################################################	CHECKED
+
+
+firstAKI<-ifelse(newAKI==1& AKIspellcounter==1& yr03==1&AKIspellcounter==min(AKIspellcounter),1,NA)
+
+
+afirstAKI<-aggregate(.~studyid, a[newAKI==1& AKIspellcounter==1& yr03==1,], FUN=head, 1)
+firstAKI<-ifelse(studyid %in% afirstAKI$studyid & dos %in% afirstAKI$dos & stcreat %in% afirstAKI$stcreat,1,0) #first 2003 AKI test that meets any AKI criteria
+markerfirstAKIyear<-ifelse(unique(AKIyear==1& firstAKI==1&AKIspellcounter==1& yr03==1)[1],1,0) #first AKI in 2003 first test that meets the 91-365d criteria - can be more than 1 criterion
+markerfirstAKIweek<-ifelse(dos==unique(dos[AKIweek==1& firstAKI==1&AKIspellcounter==1& yr03==1])[1],1,0) #first AKI in 2003 first test that meets the 3-7d criteria - can be more than 1 criterion
+markerfirstAKIday<-ifelse(dos==unique(dos[AKIday==1& firstAKI==1&AKIspellcounter==1& yr03==1])[1],1,0)#first AKI in 2003 first test that meets the 0-2d criteria - can be more than 1 criterion
+markerfirstAKImonth<-ifelse(dos==unique(dos[AKImonth==1& firstAKI==1&AKIspellcounter==1& yr03==1])[1],1,0)#first AKI in 2003 first test that meets the 8-90d criteria - can be more than 1 criterion
+
+
+#CREATES A NEW VARIABLE FOR EACH TYPE OF AKI EPISODE WHICH IS THE FIRST AKI OCCURENCE FOR EACH PATIENT IN 2003 IF IT IS ALSO THE FIRST AKI OF CRITERION TYPE
+#note if you leave out the "_n" then it takes the first sample "spell" from EACH AKI "episode" in 2003 rather than only the first AKI episode
+
+sum(which(markerfirstAKIyear==1|markerfirstAKIweek==1|markerfirstAKIday==1|markerfirstAKImonth==1))
+sum(which(firstAKI==1)) #CHECK THAT THESE TWO VALUES GIVE THE SAME RESULT
+
+############################################################################################
+
+#PART 4 - COPYING AKI FLAGS TO ALL SAMPLES SO CAN HANDLE AKI AT A PATIENT LEVEL
+
+#CREATING A LIST OF AKI PATIENTS TO MERGE
+
+newAKIyn<-max(firstAKI)#person with at least one AKI blood test
+newAKIyn<ifelse(is.na(newAKIyn),0,newAKIyn)
+
+# THIS TAKES ALL THE AKI EPISODES AND COPIES THE FIRST MARKER ONTO ALL BLOOD RESULTS FOR EACH PATIENT
+for i in 1:studyid{AKIyearyn[i]<-max(markerfirstAKIyear[i])
+AKIweekyn[i]=max(markerfirstAKIweek[i])
+AKIdayyn[i]=max(markerfirstAKIday[i])
+AKImonthyn[i]=max(markerfirstAKImonth[i])
+}
+
+ifelse(is.na(AKIyearyn),0,AKIyearyn) #AKI patient who first presented on 91-365d criteria - can be more than 1
+ifelse(is.na(AKIweekyn),0,AKIweekyn) #AKI patient who first presented on 0-7d criteria - can be more than 1
+ifelse(is.na(AKIdayryn),0,AKIdayyn)#AKI patient who first presented on 0-2d criteria - can be more than 1
+ifelse(is.na(AKImonthyn),0,AKImonthryn) #AKI patient who first presented on 8-90d criteria - can be more than 1
+
+#CREATES GROUPS WHO HAVE AKI IN 2003 AND THE CRITERIA PRESENT ON FIRST PRESENTATION 
+#(NOTE THEY COULD LATER TRIGGER OTHER CRITERIA THAT ARE NOT THERE ON FIRST PRESENTATION - THIS IS NOT REPRESENTED IN THE CODE).
+
+############################################################################################
+
+# PART 5 - FIRST AKI EVENT DATE VALUE LOCATION
+#LOOKING AT FIRST AKI DETAILS (YOU CAN ADD OTHER VARIABLES TO THIS LIST IF THERE IS SOMETHING ELSE AT PRESENTATION THAT INTERESTS YOU)
+#FOR ANY AKI
+firstAKIdate<-ifelse(firstAKI==1,as.Date(dos),NA)
+firstAKIvalue<-ifelse(firstAKI==1,stcreat,NA)
+firstAKIlocation<-ifelse(firstAKI==1,location_code,NA)
+AKIdos<-as.Date(max(firstAKIdate)) #Date of first AKI
+AKIvalue<-max(firstAKIvalue) #Value of first AKI
+AKIlocation<-max(firstAKIlocation) #AKI sample location
+
+############################################################################################
+
+#PART 6 - BASELINE AND REFERENCE CREATININE AND DATE COPIED TO ALL SAMPLES
+
+#LOOKING AT REFERENCES AND BASELINE VALUES
+
+# BASELINE WILL BE THE LOWEST AVAILABLE REFERENCE VALUE ON THE FIRST DIAGNOSIS DATE FOR FIRST EPISODE IN 2003
+#This has been coded here as the lowest in last 7 days, or the median in 90 days if that is lower, or the median in one year if there were no 90 day tests and the one year is lower than the one week reference.
+#This level of detail seems rarely to be reported in studies, but can greatly affect how AKI patients are staged.
+#I would WARN that the date for reference creatinine is PRETTY MEANINGLESS given that a median is taken for longer lookbacks. 
+#If for some reason you need a date for ref (but better not to use - I would question the relevance), I have previously used the later date where an average of two middle tests is required to produce the median creatinine.
+
+###WEEK BASELINE (in all)
+bysort studyid  (newAKIyn dos): 
+weekmarker<-ifelse((AKIdos-dos)<=7 & (AKIdos-dos)>0  & newAKIyn==1,1,0)
+bysort studyid weekmarker (dos): 
+weekvalue<-ifelse(weekmarker==1,stcreat,0)
+bysort studyid  (dos): 
+weekrefvalue<-min(weekvalue)
+bysort studyid weekmarker (dos): 
+weekgfr<-ifelse(weekmarker==1,mdrd,0)
+a<-a(order[studyid,dos,]) 
+weekrefgfr<-max(weekgfr)
+weekrefdos<-ifelse(weekrefvalue==stcreat & weekmarker==1,dos,"NA")
+a<-a(order[studyid,]) 
+AKIdosweek<-max(weekrefdos) #AKI 7d ref date
+AKIvalueweek<-max(weekrefvalue) #AKI 7d ref value
+AKIgfrweek<-max(weekrefgfr) #AKI 7d ref mdrd gfr
+
+###90d BASELINE (in all)
+bysort studyid (newAKIyn dos): gen monthmarker=1 if (AKIdos-dos)<=90 & (AKIdos-dos)>7 & newAKIyn==1
+bysort studyid monthmarker (dos): gen monthvalue=stcreat if (monthmarker==1)
+a<-a(order[studyid, dos,] 
+monthrefvalue<-median(monthvalue)
+bysort studyid monthmarker (dos): gen 
+monthgfr=mdrd if (monthmarker==1)
+bysort studyid (dos): egen 
+monthrefgfr<-median(monthgfr)
+deltamonthrefvalue<-ifelse(monthmarker==1,(monthrefvalue-stcreat)^2,0)
+deltamonthref<-min(deltamonthrefvalue)
+monthrefdos<-ifelse(deltamonthref==deltamonthrefvalue & monthmarker==1,dos,"NA")
+bysort studyid: egen 
+AKIdosmonth<-max(monthrefdos) #AKI 90d ref date
+bysort studyid: egen 
+AKIvaluemonth<-max(monthrefvalue) #AKI 90d ref value
+AKIgfrmonth<-max(monthrefgfr) #AKI 90d ref mdrd gfr
+
+##YEAR BASELINE (only for those who trigger required extended lookback due to no results 8-90 days out)
+bysort studyid (newAKIyn dos): gen yearmarker=1 if (AKIdos-dos)<=365 & (AKIdos-dos)>90 & AKIyearyn==1
+#This line has been updated by changing newAKIyn to AKIyearyn to ensure this line only triggers in those that were initially diagnosed on year rather than 90 day criteria
+bysort studyid yearmarker (dos): gen yearvalue=stcreat if (yearmarker==1)
+bysort studyid (dos): egen yearrefvalue= median(yearvalue)
+bysort studyid yearmarker (dos): gen yeargfr=mdrd if (yearmarker==1)
+bysort studyid (dos): egen yearrefgfr= median(yeargfr)
+bysort studyid (dos): gen deltayearrefvalue=((yearrefvalue-stcreat)^2) if yearmarker==1
+bysort studyid (dos): egen deltayearref= min(deltayearrefvalue)
+bysort studyid (dos): gen yearrefdos=dos if deltayearref==deltayearrefvalue & yearmarker==1
+bysort studyid: egen AKIdosyear=max(yearrefdos) #AKI 1yr ref date (no 90d value)
+bysort studyid: egen AKIvalueyear=max(yearrefvalue) #AKI 1yr ref value (no 90d value)
+bysort studyid: egen AKIgfryear=max(yearrefgfr) #AKI 1yr ref mdrd gfr (no 90d value)
+
+############################################################################################
+
+# PART 7 - AKI BASELINE REFERENCE (I'VE CHANGED FROM USING CALCULATED MDRD GFR TO USING REPORTED MDRD GFR BUT EITHER IS POSSIBLE SO I HAVE PROVIDED SOME CODE FOR GFR CONVERSIONS)
+
+egen AKIref=rowmin(AKIvalueweek AKIvaluemonth AKIvalueyear)
+egen AKIrefGFR=rowmax(AKIgfrweek AKIgfrmonth AKIgfryear)
+egen refGFRgroup=cut(AKIrefGFR), at(0, 30, 45, 60, 90, 999) label
+
+#(if need to calc GFR from creatinine using MDRD...)
+#gen AKIrefGFR= ((175#((AKIref/88.4)^(-1.154)))#(age^(-0.203))#(0.742)) if sex==0
+#replace AKIrefGFR= ((175#((AKIref/88.4)^(-1.154)))#(age^(-0.203))) if sex==1
+
+#(if need to calc GFR from creatinine using CKDEPI...)
+CR<-AKIref/88.4
+ckdEPI<-141*min(CR/cond(sex==0,0.7,0.9),1)^(ifelse(sex==0,-0.329,-0.411))^max(CR/cond(sex==0,0.7,0.9),1)^-1.209 # 0.993^age*(ifelse(sex==1,1.018,1))
+
+#DEMONSTRATION OF BASELINE eGFR
+tab refGFRgroup if firstAKI==1
+
+############################################################################################
+
+# PART 8 - PEAK CREATININE AND DATE COPIED TO ALL SAMPLES
+
+LOOKING AT PEAKS (HIGHEST CREATININE WITHIN THE NEXT 90 DAYS)
+bysort studyid (dos): gen lookforward90=1 if (dos-AKIdos)>=0 & (dos-AKIdos)<90 & newAKIyn==1
+bysort studyid (dos): gen lookforwardvalue=stcreat if lookforward90==1
+bysort studyid (dos): egen AKIpeakvalue= max(lookforwardvalue)
+bysort studyid (dos): gen peakdos= dos if AKIpeakvalue==lookforwardvalue & lookforward90==1 & newAKIyn==1
+bysort studyid (dos): egen AKIpeakdos= max(peakdos)
+count if AKIvalue<AKIpeakvalue & firstAKI==1 & newAKIyn==1
+count if AKIvalue==AKIpeakvalue & firstAKI==1 & newAKIyn==1
+count if AKIvalue>AKIpeakvalue & firstAKI==1 & newAKIyn==1
+
+############################################################################################
+
+# PART 9 - AKI SEVERITY STAGE, HIGHEST IN 90d
+
+#AT DIAGNOSIS
+akiratio<-ifelse(!is.na(AKIvalue)&!is.na(AKIref),(AKIvalue/AKIref),NA)
+akirise<-ifelse(!is.na(AKIvalue)&!is.na(AKIref),(AKIvalue-AKIref),NA)
+AKINdx<-ifelse(newAKIyn==1,1,0) #AKI severity at diagnosis 1-3
+AKINdx<-ifelse(akiratio>2 & newAKIyn==1 & !is.na(AKIratio) & !is.na(akirise),2,AKINdx) 
+AKINdx<-ifelse(akiratio>1.5 & AKIvalue>354 & newAKIyn==1 & !is.na(AKIratio) & !is.na(akirise),3,AKINdx) 
+AKINdx<-ifelse(akiratio>3 & newAKIyn==1 & !is.na(AKIratio) & !is.na(akirise),3,AKINdx) 
+
+
+#AT PEAK
+akiratio<-(AKIpeakvalue/AKIref[AKIpeakvalue>0 & AKIref>0,]
+akirise<-(AKIpeakvalue-AKIref) if !missing(AKIpeakvalue) & !missing(AKIref)
+AKIN<-ifelse(newAKIyn==1 #peak AKI severity within 90d 1-3,1,"NA")
+AKIN<-ifelse(akiratio>2 & newAKIyn==1 & !missing(akiratio) & !missing(akirise),2,AKIN)
+AKIN<-ifelse(AKIvalue>354 & akiratio>1.5 & newAKIyn==1 & !missing(akiratio) & !missing(akirise),3,AKIN)
+AKIN<-ifelse(akiratio>3 & newAKIyn==1 & !missing(akiratio) & !missing(akirise),3,AKIN)
+
+#DEMONSTRATION OF AKI STAGE
+table(AKINdx[firstAKI==1, ])
+table(AKIN[firstAKI==1, ])
+
+############################################################################################
+
+# PART 10 - DEMONSTRATION OF RECURRENCE (NUMBER OF PREVIOUS EPISODES SINCE 01/01/2000)
+
+#If first AKI is the nth episode then number of previous episodes is n-1
+prevAKIcount<-AKIcounter-1 #number of previous AKI episodes at the time of an AKI episode
+table(prevAKIcount[firstAKI==1, ])
+
+############################################################################################
+
+# PART 11 - DEMONSTRATION OF NUMBER OF AKI TESTS WITHIN INDEX EPISODE
+
+#Code to count the number of AKI blood tests within the incident AKI episode
+bysort studyid first AKI: gen mark = AKIcounter if firstAKI==1
+bysort studyid: egen mark2 = max(mark)
+mark3<-ifelse(mark2==AKIcounter,AKIspellcounter,NA)
+a<-a(order[studyid, ])
+AKItestcount<-max(mark3)
+summary(AKItestcount[firstAKI==1,])
+
+############################################################################################
+
+#PART 12 - DEMONSTRATION OF RECOVERY
+#Categorised based on the last available creatinine within the #90 day episode. 
+#If no repeat tests, result is a missing value, otherwise, this produces a ratio of recovered value/baseline #for AKI patients
+#Ratio>=1.2 equates to non-recovery following AJKD paper
+
+mark5<-ifelse(lookforward90==1 & !dos=AKIdos,dos,NA)
+mark6<-max(mark5)
+mark7<-ifelse(mark6==dos,stcreat,NA)
+recoveryvalue<-max(mark7)
+recoveryratio<-ifelse(firstAKI==1,recoveryvalue/AKIref,NA) 
+
+length(studyid[recoveryratio>=1.2 & firstAKI==1, ])
+length(studyid[recoveryratio<1.2 & firstAKI==1, ])
+length(studyid[recoveryratio==. & firstAKI==1, ])
+#Code complete
