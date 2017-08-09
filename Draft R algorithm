@@ -61,6 +61,7 @@ index<-which(dos>=40907 & dos<=41272) #works for excel/STATA date formats
 
 a$yr03<-0
 a$yr03[index]<-1 #MARK INDEX YEAR
+table(a$yr03)
 
 #SELECT AS APPROPRIATE
 a$post2000<-ifelse(dos>=39812,1,0) #sample after 1st jan 
@@ -101,12 +102,9 @@ daymarker<-NA
 a <-a[order(studyid, dos),] 
 attach(a)
 
-pb<-tkProgressBar(title="progress bar",min=0,max=max(protagonist),width=300) #indicates progress through the loop
+pb<-tkProgressBar(title="Assigning index creatinine values",min=0,max=max(protagonist),width=300) #indicates progress through the loop
 for (i in 1:max(protagonist)) {
-
-pb<-tkProgressBar(title="progress bar",min=0,max=max(protagonist),width=300) #indicates progress through the loop
 for (i in 1:50) {
-setTkProgressBar(pb,i,label=paste(round(i/(max(protagonist))*100, 0),"% done"))
 mightydate<-ifelse(protagonist==i,dos,mightydate)
 protagonistdos<-as.numeric(ave(mightydate,studyid,FUN=max))
 yearmarker<-ifelse((protagonistdos-dos)<=365 & (protagonistdos-dos)>90,1,yearmarker)
@@ -115,9 +113,9 @@ monthmarker<-ifelse((protagonistdos-dos)<=90 &(protagonistdos-dos)>=8,1,monthmar
 daymarker<-ifelse((protagonistdos-dos)<=2 & !protagonistdos==dos,1,daymarker)
 mightyvalue<-ifelse(protagonist==i,stcreat,NA)
 protagonistvalue<-ave(mightyvalue[!is.na(mightyvalue)],studyid,FUN=max)
-
+setTkProgressBar(pb,i,label=paste(round(i/(max(protagonist))*100, 0),"% done"))
+}}
 #finds the index (investigated) creatinine of key interest, applies this value across all patient samples
-}
 
 #END OF LOOP
 close(pb)
