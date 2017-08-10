@@ -36,6 +36,7 @@ library (taRifx)
 library (dplyr)
 library(tcltk)
 library(lubridate)
+memory.limit(50000)
 
 a<-read.table("testrversion.csv",sep=",",header=TRUE)
 attach(a)
@@ -113,10 +114,13 @@ monthmarker<-ifelse((protagonistdos-dos)<=90 &(protagonistdos-dos)>=8,1,monthmar
 daymarker<-ifelse((protagonistdos-dos)<=2 & !protagonistdos==dos,1,daymarker)
 mightyvalue<-ifelse(protagonist==i,stcreat,NA)
 protagonistvalue<-ave(mightyvalue[!is.na(mightyvalue)],studyid,FUN=max)
+print(protagonistvalue)
 setTkProgressBar(pb,i,label=paste(round(i/(max(protagonist))*100, 0),"% complete"))
 }
 #END OF LOOP
 close(pb)
+
+a$protagonistvalue<-protagonistvalue
 
 #Mark the dates of blood tests that fit the ealert AKI windows or those required for sensitivity analysis
 
@@ -126,28 +130,28 @@ monthvalue<-ifelse(monthmarker==1,stcreat,NA)
 dayvalue<-ifelse(daymarker==1,stcreat,NA)
 
 #finds the appropriate creatinine within these windows, excludes missing creatinines which would all be exceptionally high
+pb2<-tkProgressBar(title="Loading ref creatinine values",min=0,max=max(studyid),width=300) #indicates progress through the loop
+for (i in length(studyid)) {
 
-memory.limit(4000)
-yearmedian<-ave(yearvalue[!is.na(yearvalue)],studyid, FUN=median)
+
+yearmedian<-ave(yearvalue,studyid, FUN=median,na.rm=TRUE)
+
+
 weekmin<-ave(weekvalue[!is.na(weekvalue)],studyid,FUN=min)
 monthmedian<-ave(monthvalue[!is.na(monthvalue)],studyid,FUN=median)
 daymin<-ave(dayvalue[!is.na(dayvalue)],studyid,FUN=min)
-#applies the optimal reference creatinine across all patient samples
-
-############################################################################################
-for (i in 50) {
-
-AKIyear<-ifelse((protagonistvalue/yearmedian)>=1.5 & protagonist==i&!is.na(yearmedian) & is.na(monthmedian),1,0)
-#year AKI can only be tested if there is not a monthmedian already available for the sample, thus monthmedian sample needs to be missing before looking back further
-
+AKIyear<-ifelse((protagonistvalue/yearmedian)>=1.5 & is.na(monthmedian) & is.na(weekmin),1,0)
 AKIweek<-ifelse((protagonistvalue/weekmin)>=1.5 & protagonist==i & !is.na(weekmin),1,0)
 AKIday<-ifelse((protagonistvalue-daymin)>26 & protagonist==i & !is.na(daymin),1,0)
 AKImonth<-ifelse((protagonistvalue/monthmedian)>=1.5 & protagonist==i & !is.na(monthmedian),1,0) 
-### flags samples meeting AKI criteria, (non missing option vital)
+setTkProgressBar(pb2,i,label=paste(round(i/(max(studyid))*100, 0),"% complete"))
 }
-
 #END OF LOOP
 close(pb)
+
+#applies the optimal reference creatinine across all patient samples
+#year AKI can only be tested if there is not a monthmedian already available for the sample, thus monthmedian sample needs to be missing before looking back further
+# flags samples meeting AKI criteria, (non missing option vital)
 
 #DEVELOP COMBINED GROUPS AND MARK FIRST AKI
 newAKI<-ifelse(AKIyear==1|AKIweek==1|AKIday==1|AKImonth==1,1,0) #AKI qualifying blood test
