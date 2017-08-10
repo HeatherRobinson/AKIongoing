@@ -114,10 +114,6 @@ monthmarker<-ifelse((protagonistdos-dos)<=90 &(protagonistdos-dos)>=8,1,monthmar
 daymarker<-ifelse((protagonistdos-dos)<=2 & !protagonistdos==dos,1,daymarker)
 mightyvalue<-ifelse(protagonist==i,stcreat,NA)
 protagonistvalue<-ave(mightyvalue[!is.na(mightyvalue)],studyid,FUN=max)
-yearvalue<-ifelse(yearmarker==1,stcreat,NA)
-weekvalue<-ifelse(weekmarker==1,stcreat,NA)
-monthvalue<-ifelse(monthmarker==1,stcreat,NA)
-dayvalue<-ifelse(daymarker==1,stcreat,NA)
 setTkProgressBar(pb,i,label=paste(round(i/(max(protagonist))*100, 0),"% complete"))
 }
 #END OF LOOP
@@ -127,6 +123,10 @@ close(pb)
 #find the appropriate creatinine within these windows, excludes missing creatinines which would all be exceptionally high
 
 for (i in 1:length(studyid)){ 
+yearvalue<-ifelse(yearmarker==1,stcreat,NA)
+weekvalue<-ifelse(weekmarker==1,stcreat,NA)
+monthvalue<-ifelse(monthmarker==1,stcreat,NA)
+dayvalue<-ifelse(daymarker==1,stcreat,NA)
 yearmedian[i] <- median(yearvalue[studyid==studyid[i]],na.rm=TRUE)
 weekmin[i]<-min(weekvalue[studyid==studyid[i]],na.rm=TRUE)
 monthmedian[i]<-ave(monthvalue[studyid==studyid[i]],na.rm=TRUE)
